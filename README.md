@@ -39,6 +39,8 @@ iikira/BaiduPCS-Go was largely inspired by [GangZhuo/BaiduPCS](https://github.co
   * [搜索文件](#搜索文件)
   * [下载文件/目录](#下载文件目录)
   * [上传文件/目录](#上传文件目录)
+  * [压缩文件夹并上传](#压缩文件夹并上传)
+  * [压缩文件夹（不上传）](#压缩文件夹不上传)
   * [获取下载直链](#获取下载直链)
   * [修复文件MD5](#修复文件MD5)
   * [创建目录](#创建目录)
@@ -94,6 +96,16 @@ iikira/BaiduPCS-Go was largely inspired by [GangZhuo/BaiduPCS](https://github.co
 
 [离线下载](#离线下载), 支持http/https/ftp/电驴/磁力链协议.
 # 版本更新
+
+**2026.02.26** v4.1.0
+- 新增 `compress-upload` 命令，支持压缩文件夹并上传到百度网盘
+- 新增 `compress` 命令，支持仅压缩文件夹功能
+- 支持自定义压缩深度（默认二级文件夹）
+- 支持批量压缩多个同级文件夹
+- 压缩完成后自动触发上传流程
+- 上传成功后可选择删除本地压缩包
+- 支持压缩进度监控和状态跟踪
+- 严格控制压缩包数量不超过上传线程数
 
 **2025.10.29** v4.0.0
 - 上传重新支持跳过秒传`--norapid`
@@ -629,6 +641,73 @@ BaiduPCS-Go upload C:/Users/Administrator/Desktop/1.mp4 C:/Users/Administrator/D
 
 # 将本地的 C:\Users\Administrator\Desktop 整个目录上传到网盘 /视频 目录, 只覆盖与本地大小不同的同名文件
 BaiduPCS-Go upload C:/Users/Administrator/Desktop /视频 --policy rsync
+```
+
+## 压缩文件夹并上传
+```
+BaiduPCS-Go compress-upload <本地文件夹路径1> <文件夹路径2> ... <目标目录>
+BaiduPCS-Go cu <本地文件夹路径1> <文件夹路径2> ... <目标目录>
+```
+
+* 将本地文件夹压缩为ZIP格式后上传到百度网盘
+* 支持自定义压缩深度（默认压缩二级文件夹）
+* 压缩完成后自动上传
+* 上传成功后可选删除本地压缩包
+* 支持批量压缩多个同级文件夹
+* 压缩包数量不超过上传线程数
+
+### 可选参数
+```
+  -p value        指定单个文件上传的最大线程数 (default: 0)
+  --retry value   上传失败最大重试次数 (default: 3)
+  -l value        指定同时上传的最大文件数（也限制压缩包数量） (default: 0)
+  --norapid       跳过秒传
+  --policy value  对同名文件的处理策略 (default: "skip")
+  --delete        上传成功后删除本地压缩包
+  --depth value   压缩深度 (0=仅当前目录, 1=一级子目录, -1=无限深度) (default: 2)
+  --hidden        包含隐藏文件
+```
+
+#### 例子:
+```
+# 压缩单个文件夹并上传到网盘 /备份 目录
+BaiduPCS-Go compress-upload /path/to/folder /备份
+
+# 压缩多个文件夹并上传，上传后删除本地压缩包
+BaiduPCS-Go compress-upload --delete /path/to/folder1 /path/to/folder2 /备份
+
+# 指定压缩深度为1（只压缩一级子目录）
+BaiduPCS-Go compress-upload --depth=1 /path/to/folder /备份
+
+# 压缩深度为-1（压缩所有层级）
+BaiduPCS-Go compress-upload --depth=-1 /path/to/folder /备份
+```
+
+## 压缩文件夹（不上传）
+```
+BaiduPCS-Go compress <本地文件夹路径1> <文件夹路径2> ... [--output 输出目录]
+BaiduPCS-Go zip <本地文件夹路径1> <文件夹路径2> ... [--output 输出目录]
+```
+
+* 将本地文件夹压缩为ZIP格式，不上传到网盘
+
+### 可选参数
+```
+  --output, -o value  输出目录（默认为当前目录）
+  --depth value       压缩深度 (0=仅当前目录, 1=一级子目录, -1=无限深度) (default: 0)
+  --hidden            包含隐藏文件
+```
+
+#### 例子:
+```
+# 压缩单个文件夹
+BaiduPCS-Go compress /path/to/folder
+
+# 压缩多个文件夹到指定目录
+BaiduPCS-Go compress /path/to/folder1 /path/to/folder2 --output /path/to/output
+
+# 指定压缩深度
+BaiduPCS-Go compress --depth=1 /path/to/folder
 ```
 
 ## 获取下载直链

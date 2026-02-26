@@ -154,7 +154,7 @@ func main() {
 				lineArgs                   = args.Parse(line)
 				numArgs                    = len(lineArgs)
 				acceptCompleteFileCommands = []string{
-					"cd", "cp", "download", "export", "locate", "ls", "meta", "mkdir", "mv", "rm", "setastoken", "share", "transfer", "tree", "upload",
+					"cd", "compress", "compress-upload", "cp", "download", "export", "locate", "ls", "meta", "mkdir", "mv", "rm", "setastoken", "share", "transfer", "tree", "upload",
 				}
 				closed = strings.LastIndex(line, " ") == len(line)-1
 			)
@@ -1241,6 +1241,142 @@ func main() {
 				cli.StringFlag{
 					Name:  "policy",
 					Usage: fmt.Sprintf("对同名文件的处理策略 (default: %s), %s, %s", baidupcs.SkipPolicy, baidupcs.OverWritePolicy, baidupcs.RsyncPolicy),
+				},
+			},
+		},
+		{
+			Name:      "compress-upload",
+			Aliases:   []string{"cu"},
+			Usage:     "压缩文件夹并上传",
+			UsageText: app.Name + " compress-upload <本地文件夹路径1> <文件夹路径2> ... <目标目录>",
+			Description: `
+	将本地文件夹压缩为ZIP格式后上传到百度网盘。支持自定义压缩深度和批量压缩。
+
+	特性:
+		- 支持自定义压缩深度（默认压缩二级文件夹）
+		- 压缩完成后自动上传
+		- 上传成功后可选删除本地压缩包
+		- 支持批量压缩多个同级文件夹
+		- 压缩包数量不超过上传线程数
+
+	示例:
+
+	1. 将本地文件夹 /path/to/folder 压缩并上传到网盘 /备份 目录
+	BaiduPCS-Go compress-upload /path/to/folder /备份
+
+	2. 压缩多个文件夹并上传，上传后删除本地压缩包
+	BaiduPCS-Go compress-upload --delete /path/to/folder1 /path/to/folder2 /备份
+
+	3. 指定压缩深度为1（只压缩一级子目录）
+	BaiduPCS-Go compress-upload --depth=1 /path/to/folder /备份
+
+	4. 压缩深度为-1（压缩所有层级）
+	BaiduPCS-Go compress-upload --depth=-1 /path/to/folder /备份
+`,
+			Category: "百度网盘",
+			Before:   reloadFn,
+			Action: func(c *cli.Context) error {
+				if c.NArg() < 2 {
+					cli.ShowCommandHelp(c, c.Command.Name)
+					return nil
+				}
+
+				subArgs := c.Args()
+				pcscommand.RunCompressUpload(subArgs[:c.NArg()-1], subArgs[c.NArg()-1], &pcscommand.CompressUploadOptions{
+					Parallel:         c.Int("p"),
+					MaxRetry:         c.Int("retry"),
+					Load:             c.Int("l"),
+					NoRapidUpload:    c.Bool("norapid"),
+					Policy:           c.String("policy"),
+					DeleteAfterUpload: c.Bool("delete"),
+					Depth:            c.Int("depth"),
+					IncludeHidden:    c.Bool("hidden"),
+				})
+				return nil
+			},
+			Flags: []cli.Flag{
+				cli.IntFlag{
+					Name:  "p",
+					Usage: "指定单个文件上传的最大线程数",
+				},
+				cli.IntFlag{
+					Name:  "retry",
+					Usage: "上传失败最大重试次数",
+					Value: pcscommand.DefaultCompressMaxRetry,
+				},
+				cli.IntFlag{
+					Name:  "l",
+					Usage: "指定同时上传的最大文件数（也限制压缩包数量）",
+				},
+				cli.BoolFlag{
+					Name:  "norapid",
+					Usage: "跳过秒传",
+				},
+				cli.StringFlag{
+					Name:  "policy",
+					Usage: fmt.Sprintf("对同名文件的处理策略 (default: %s), %s, %s", baidupcs.SkipPolicy, baidupcs.OverWritePolicy, baidupcs.RsyncPolicy),
+				},
+				cli.BoolFlag{
+					Name:  "delete",
+					Usage: "上传成功后删除本地压缩包",
+				},
+				cli.IntFlag{
+					Name:  "depth",
+					Usage: "压缩深度 (0=仅当前目录, 1=一级子目录, -1=无限深度)",
+					Value: 2,
+				},
+				cli.BoolFlag{
+					Name:  "hidden",
+					Usage: "包含隐藏文件",
+				},
+			},
+		},
+		{
+			Name:      "compress",
+			Aliases:   []string{"zip"},
+			Usage:     "压缩文件夹（不上传）",
+			UsageText: app.Name + " compress <本地文件夹路径1> <文件夹路径2> ... [--output 输出目录]",
+			Description: `
+	将本地文件夹压缩为ZIP格式，不上传到网盘。
+
+	示例:
+
+	1. 压缩单个文件夹
+	BaiduPCS-Go compress /path/to/folder
+
+	2. 压缩多个文件夹到指定目录
+	BaiduPCS-Go compress /path/to/folder1 /path/to/folder2 --output /path/to/output
+
+	3. 指定压缩深度
+	BaiduPCS-Go compress --depth=1 /path/to/folder
+`,
+			Category: "其他",
+			Before:   reloadFn,
+			Action: func(c *cli.Context) error {
+				if c.NArg() < 1 {
+					cli.ShowCommandHelp(c, c.Command.Name)
+					return nil
+				}
+
+				pcscommand.RunCompressOnly(c.Args(), c.String("output"), &pcscommand.CompressUploadOptions{
+					Depth:         c.Int("depth"),
+					IncludeHidden: c.Bool("hidden"),
+				})
+				return nil
+			},
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "output, o",
+					Usage: "输出目录（默认为当前目录）",
+				},
+				cli.IntFlag{
+					Name:  "depth",
+					Usage: "压缩深度 (0=仅当前目录, 1=一级子目录, -1=无限深度)",
+					Value: 0,
+				},
+				cli.BoolFlag{
+					Name:  "hidden",
+					Usage: "包含隐藏文件",
 				},
 			},
 		},
