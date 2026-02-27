@@ -27,7 +27,7 @@ type CompressUploadOptions struct {
 	Policy           string
 	DeleteAfterUpload bool
 	Depth            int
-	IncludeHidden    bool
+	IncludeHidden     bool
 }
 
 func RunCompressUpload(localPaths []string, savePath string, opt *CompressUploadOptions) {
@@ -72,7 +72,7 @@ func RunCompressUpload(localPaths []string, savePath string, opt *CompressUpload
 
 	fmt.Print("\n")
 	fmt.Printf("[0] 提示: 当前上传单个文件最大并发量为: %d, 最大同时上传文件数为: %d\n", opt.Parallel, opt.Load)
-	fmt.Printf("[0] 提示: 压缩深度: %d (0=仅当前目录, -1=无限深度)\n", opt.Depth)
+	fmt.Printf("[0] 提示: 压缩深度: %d (0=仅当前目录, 1=一级子目录, -1=无限深度)\n", opt.Depth)
 	fmt.Printf("[0] 提示: 上传后删除压缩包: %v\n", opt.DeleteAfterUpload)
 
 	compressOpts := &pcscompress.CompressOptions{
@@ -100,36 +100,46 @@ func RunCompressUpload(localPaths []string, savePath string, opt *CompressUpload
 			continue
 		}
 
-		var zipPath string
-		if len(localPaths) == 1 {
-			zipPath = pcscompress.GenerateSimpleZipName(absPath)
+		var directoriesToCompress []string
+		if opt.Depth == 0 {
+			directoriesToCompress = []string{absPath}
+		} else if opt.Depth == 1 {
+			subDirs, err := pcscompress.GetSubDirectories(absPath, 1)
+			if err != nil {
+				fmt.Printf("警告: 获取子目录失败: %s, %s\n", localPath, err)
+				continue
+			}
+			directoriesToCompress = subDirs
 		} else {
-			zipPath = pcscompress.GenerateUniqueZipName(absPath)
+			directoriesToCompress = []string{absPath}
 		}
 
-		if !pcsutil.ChPathLegal(absPath) {
-			fmt.Printf("[0] %s 路径含有非法字符，已跳过!\n", absPath)
-			continue
+		for _, dirPath := range directoriesToCompress {
+			zipPath := pcscompress.GenerateSimpleZipName(dirPath)
+
+			if !pcsutil.ChPathLegal(dirPath) {
+				fmt.Printf("[0] %s 路径含有非法字符，已跳过!\n", dirPath)
+				continue
+			}
+
+			targetSavePath := path.Clean(savePath + baidupcs.PathSeparator + path.Base(zipPath))
+			info := executor.Append(&pcscompress.CompressUploadTaskUnit{
+				SourcePath:        dirPath,
+				TargetZipPath:     zipPath,
+				SavePath:          targetSavePath,
+				PCS:               pcs,
+				Parallel:          opt.Parallel,
+				MaxRetry:          opt.MaxRetry,
+				Policy:            opt.Policy,
+				NoRapidUpload:     opt.NoRapidUpload,
+				DeleteAfterUpload: opt.DeleteAfterUpload,
+				CompressOpts:      compressOpts,
+				Statistic:         statistic,
+			}, opt.MaxRetry)
+
+			taskCount++
+			fmt.Printf("[%s] 加入压缩上传队列: %s\n", info.Id(), dirPath)
 		}
-
-		targetSavePath := path.Clean(savePath + baidupcs.PathSeparator + path.Base(zipPath))
-
-		info := executor.Append(&pcscompress.CompressUploadTaskUnit{
-			SourcePath:        absPath,
-			TargetZipPath:     zipPath,
-			SavePath:          targetSavePath,
-			PCS:               pcs,
-			Parallel:          opt.Parallel,
-			MaxRetry:          opt.MaxRetry,
-			Policy:            opt.Policy,
-			NoRapidUpload:     opt.NoRapidUpload,
-			DeleteAfterUpload: opt.DeleteAfterUpload,
-			CompressOpts:      compressOpts,
-			Statistic:         statistic,
-		}, opt.MaxRetry)
-
-		taskCount++
-		fmt.Printf("[%s] 加入压缩上传队列: %s\n", info.Id(), localPath)
 	}
 
 	if executor.Count() == 0 {
@@ -228,25 +238,34 @@ func RunCompressOnly(localPaths []string, outputDir string, opt *CompressUploadO
 			continue
 		}
 
-		var zipPath string
-		if outputDir != "" {
-			if len(localPaths) == 1 {
-				zipPath = filepath.Join(outputDir, pcscompress.GenerateSimpleZipName(absPath))
-			} else {
-				zipPath = filepath.Join(outputDir, pcscompress.GenerateUniqueZipName(absPath))
+		var directoriesToCompress []string
+		if opt.Depth == 0 {
+			directoriesToCompress = []string{absPath}
+		} else if opt.Depth == 1 {
+			subDirs, err := pcscompress.GetSubDirectories(absPath, 1)
+			if err != nil {
+				fmt.Printf("警告: 获取子目录失败: %s, %s\n", localPath, err)
+				continue
 			}
+			directoriesToCompress = subDirs
 		} else {
-			if len(localPaths) == 1 {
-				zipPath = pcscompress.GenerateSimpleZipName(absPath)
-			} else {
-				zipPath = pcscompress.GenerateUniqueZipName(absPath)
-			}
+			directoriesToCompress = []string{absPath}
 		}
 
-		err = queue.AddTask(absPath, zipPath, compressOpts)
-		if err != nil {
-			fmt.Printf("警告: 添加压缩任务失败: %s, %s\n", localPath, err)
-			continue
+		for _, dirPath := range directoriesToCompress {
+			zipName := pcscompress.GenerateSimpleZipName(dirPath)
+			var zipPath string
+			if outputDir != "" {
+				zipPath = filepath.Join(outputDir, zipName)
+			} else {
+				zipPath = zipName
+			}
+
+			err = queue.AddTask(dirPath, zipPath, compressOpts)
+			if err != nil {
+				fmt.Printf("警告: 添加压缩任务失败: %s, %s\n", localPath, err)
+				continue
+			}
 		}
 	}
 

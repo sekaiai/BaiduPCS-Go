@@ -14,50 +14,50 @@ import (
 )
 
 var (
-	ErrSourceNotExist      = errors.New("源路径不存在")
-	ErrSourceNotDirectory  = errors.New("源路径不是目录")
-	ErrPermissionDenied    = errors.New("权限不足")
+	ErrSourceNotExist        = errors.New("源路径不存在")
+	ErrSourceNotDirectory    = errors.New("源路径不是目录")
+	ErrPermissionDenied      = errors.New("权限不足")
 	ErrDiskSpaceInsufficient = errors.New("磁盘空间不足")
-	ErrCompressFailed      = errors.New("压缩失败")
-	ErrCreateZipFailed     = errors.New("创建ZIP文件失败")
+	ErrCompressFailed        = errors.New("压缩失败")
+	ErrCreateZipFailed       = errors.New("创建ZIP文件失败")
 )
 
 type CompressOptions struct {
-	Depth          int  `json:"depth"`           // 压缩深度，0表示只压缩当前目录，-1表示无限深度
-	IncludeHidden  bool `json:"include_hidden"`  // 是否包含隐藏文件
-	CompressionLevel int `json:"compression_level"` // 压缩级别
+	Depth           int  `json:"depth"`
+	IncludeHidden   bool `json:"include_hidden"`
+	CompressionLevel int `json:"compression_level"`
 }
 
 type CompressTask struct {
-	SourcePath     string         `json:"source_path"`     // 源文件夹路径
-	TargetZipPath  string         `json:"target_zip_path"` // 目标ZIP文件路径
-	Options        CompressOptions `json:"options"`        // 压缩选项
-	TotalFiles     int64          `json:"total_files"`     // 总文件数
-	TotalSize      int64          `json:"total_size"`      // 总大小
-	CompressedSize int64          `json:"compressed_size"` // 已压缩大小
-	ProcessedFiles int64          `json:"processed_files"` // 已处理文件数
-	StartTime      time.Time      `json:"start_time"`      // 开始时间
-	EndTime        time.Time      `json:"end_time"`        // 结束时间
-	mu             sync.RWMutex   `json:"-"`               // 读写锁
-	OnProgress     func(processed, total int64, currentFile string) `json:"-"` // 进度回调
+	SourcePath     string          `json:"source_path"`
+	TargetZipPath  string          `json:"target_zip_path"`
+	Options        CompressOptions `json:"options"`
+	TotalFiles     int64           `json:"total_files"`
+	TotalSize      int64           `json:"total_size"`
+	CompressedSize int64           `json:"compressed_size"`
+	ProcessedFiles int64           `json:"processed_files"`
+	StartTime      time.Time       `json:"start_time"`
+	EndTime        time.Time       `json:"end_time"`
+	mu             sync.RWMutex    `json:"-"`
+	OnProgress     func(processed, total int64, currentFile string) `json:"-"`
 }
 
 type CompressResult struct {
-	Success        bool      `json:"success"`
-	SourcePath     string    `json:"source_path"`
-	TargetZipPath  string    `json:"target_zip_path"`
-	TotalFiles     int64     `json:"total_files"`
-	TotalSize      int64     `json:"total_size"`
-	CompressedSize int64     `json:"compressed_size"`
-	Duration       time.Duration `json:"duration"`
-	Error          error     `json:"error"`
+	Success        bool           `json:"success"`
+	SourcePath     string         `json:"source_path"`
+	TargetZipPath  string         `json:"target_zip_path"`
+	TotalFiles     int64          `json:"total_files"`
+	TotalSize      int64          `json:"total_size"`
+	CompressedSize int64          `json:"compressed_size"`
+	Duration       time.Duration  `json:"duration"`
+	Error          error          `json:"error"`
 }
 
 func NewCompressTask(sourcePath, targetZipPath string, opts *CompressOptions) *CompressTask {
 	if opts == nil {
 		opts = &CompressOptions{
-			Depth:           -1,
-			IncludeHidden:   false,
+			Depth:            -1,
+			IncludeHidden:    false,
 			CompressionLevel: 6,
 		}
 	}
@@ -258,7 +258,7 @@ func (ct *CompressTask) Execute() *CompressResult {
 		}
 		defer file.Close()
 
-		written, err := io.Copy(writer, file)
+		_, err = io.Copy(writer, file)
 		if err != nil {
 			file.Close()
 			return fmt.Errorf("写入文件 %s 失败: %w", path, err)
@@ -317,6 +317,20 @@ func GetSubDirectories(parentPath string, depth int) ([]string, error) {
 		return dirs, nil
 	}
 
+	if depth == 1 {
+		entries, err := os.ReadDir(parentPath)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				fullPath := filepath.Join(parentPath, entry.Name())
+				dirs = append(dirs, fullPath)
+			}
+		}
+		return dirs, nil
+	}
+
 	err = filepath.Walk(parentPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -330,22 +344,18 @@ func GetSubDirectories(parentPath string, depth int) ([]string, error) {
 			return err
 		}
 
-		currentDepth := strings.Count(relPath, string(os.PathSeparator))
 		if relPath == "." {
-			currentDepth = 0
+			return nil
 		}
 
-		if depth > 0 && currentDepth >= depth {
-			if currentDepth == depth {
-				dirs = append(dirs, path)
-			}
+		currentDepth := strings.Count(relPath, string(os.PathSeparator)) + 1
+
+		if depth > 0 && currentDepth > depth {
 			return filepath.SkipDir
 		}
 
-		if depth < 0 || currentDepth < depth {
-			if currentDepth > 0 {
-				dirs = append(dirs, path)
-			}
+		if depth < 0 || currentDepth <= depth {
+			dirs = append(dirs, path)
 		}
 
 		return nil
